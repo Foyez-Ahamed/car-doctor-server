@@ -9,16 +9,23 @@ const port = process.env.PORT || 5000;
 
 
 // middleware // 
+
 app.use(cors({
-  origin: ['http://localhost:5173'],
-  credentials: true
+  origin : [
+    
+    'https://cars-doctor-1e74b.web.app',
+    
+    'https://cars-doctor-1e74b.firebaseapp.com'
+
+],
+  credentials:true
 }));
 
 app.use(express.json());
 
 app.use(cookieParser());
 
-
+// middleware // 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.wslenxe.mongodb.net/?retryWrites=true&w=majority`;
 
@@ -41,52 +48,101 @@ const client = new MongoClient(uri, {
 
 
 // the way of token verify by using middleware // 
-const verifyToken = async(req, res , next) => {
-   const token = req.cookies?.token;
-   console.log('value of token middleware', token);
-   if(!token) {
-    return res.status(401).send({message : 'not authorized'})
-   }
+// const verifyToken = async(req, res , next) => {
+//    const token = req.cookies?.token;
+//    console.log('value of token middleware', token);
+//    if(!token) {
+//     return res.status(401).send({message : 'not authorized'})
+//    }
 
-   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-    // err
+//    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+//     // err
 
-    if(err) {
-      console.log(err);
-      return res.status(401).send({message : 'unauthorized'})
+//     if(err) {
+//       console.log(err);
+//       return res.status(401).send({message : 'unauthorized'})
+//     }
+
+//     // if token is valid then it would be decoded // 
+//     console.log('value in the token ', decoded);
+//     req.user = decoded;
+//     next();
+//   })
+// }
+// the way of token verify by using middleware // 
+
+
+const verifyToken = (req, res, next) => {
+  const token = req?.cookies?.token;
+  // console.log('token in the middleware', token);
+
+  if(!token){
+    return res.status(401).send({message : 'unauthorized access'})
+  }
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if(err){
+      return res.status(401).send({message : 'unauthorized access'})
     }
 
-    // if token is valid then it would be decoded // 
-    console.log('value in the token ', decoded);
     req.user = decoded;
+    
     next();
   })
+
+  // next();
 }
-// the way of token verify by using middleware // 
+// my crated middleware // 
 
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+
+    // await client.connect();
 
     const servicesCollection = client.db('carDoctor').collection('services');
 
     const ordersCollection = client.db('carDoctor').collection('orders');
 
+
+
+    // auth related api // 
+    // app.post('/jwt', async(req, res) => {
+    //   const user = req.body;
+    //   console.log(user);
+      
+    //   const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn : '1h'})
+    //   res
+    //   .cookie('token', token, {
+    //     httpOnly: true,
+    //     secure: false,
+    //   })
+    //   .send({success : true});
+    // })
+
     // auth related api // 
     app.post('/jwt', async(req, res) => {
       const user = req.body;
-      console.log(user);
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn : '1h'})
+      console.log('user for token', user);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {expiresIn: '2h'});
       res
       .cookie('token', token, {
         httpOnly: true,
-        secure: false,
+        secure: true,
+        sameSite: 'none'
       })
       .send({success : true});
     })
 
+    app.post('/logout', async(req, res) => {
+      const user = req.body;
+      console.log('logging out' , user);
+      res
+      .clearCookie('token', {maxAge: 0})
+      .send({success: true})
+    })
 
+// auth related api // 
 
     // CRUD Read for services //
     app.get('/services', async(req, res) => {
@@ -109,7 +165,7 @@ async function run() {
     })
 
 
-    // Create for customers oders collection // 
+    // Create for customers orders collection // 
     app.post('/orders',  async(req, res) => {
       const orders = req.body;
       const result = await ordersCollection.insertOne(orders);
@@ -121,10 +177,19 @@ async function run() {
     app.get('/orders', verifyToken, async(req, res) => {
       console.log(req.query.email);
       // console.log('tok tok token', req.cookies.token);
-      console.log('user in the valid token ' , req.user);
 
-      if(req.query.email !== req.user.email){
-        return res.status(403).send({message : 'forbidden access '})
+      // console.log('user in the valid token ' , req.user);
+
+      // if(req.query.email !== req.user.email){
+      //   return res.status(403).send({message : 'forbidden access '})
+      // }
+
+      // console.log('cook cookies', req.cookies);
+
+      console.log('token owner info', req.user);
+
+      if(req.user.email !== req.query.email){
+        return res.status(403).send({message : 'forbidden access'})
       }
 
       let query = {};
@@ -137,6 +202,7 @@ async function run() {
 
 
 
+    // delete orders /// 
     app.delete('/orders/:id', async(req, res) => {
       const id = req.params.id;
       const query = {_id : new ObjectId(id)};
@@ -145,7 +211,7 @@ async function run() {
     })
 
 
-
+// update orders // 
     app.patch('/orders/:id', async(req, res) => {
       const id = req.params.id;
       const updatedOrders = req.body;
@@ -166,8 +232,8 @@ async function run() {
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("admin").command({ ping: 1 });
+    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
